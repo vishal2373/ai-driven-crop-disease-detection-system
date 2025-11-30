@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Linguistics AI Chatbot</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com">
+       
+    </script>
+    <style>
+        /* Custom styles for chat interface */
+        #chat-window {
+            height: 70vh;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+        /* Message bubble for the user */
+        .user-message {
+            background-color: #2563EB; /* Blue */
+            color: white;
+            border-radius: 18px 18px 2px 18px;
+            max-width: 80%;
+            align-self: flex-end;
+        }
+        /* Message bubble for the bot */
+        .bot-message {
+            background-color: #E5E7EB; /* Light Gray */
+            color: #1F2937; /* Dark text */
+            border-radius: 18px 18px 18px 2px;
+            max-width: 80%;
+            align-self: flex-start;
+        }
+        /* Focus style for the input bar */
+        #message-input:focus {
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.5); /* Custom focus ring blue */
+            border-color: #2563EB;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4 font-sans">
+
+    <div class="w-full max-w-lg bg-white shadow-2xl rounded-xl flex flex-col">
+        <!-- Header -->
+        <header class="p-4 bg-blue-600 rounded-t-xl text-white shadow-md">
+            <h1 class="text-xl font-bold">Linguistics AI Tutor</h1>
+            <p class="text-sm opacity-90">Ask me anything about language, grammar, or semantics!</p>
+        </header>
+
+        <!-- Chat Window -->
+        <div id="chat-window" class="p-4 flex flex-col space-y-4">
+            <!-- Initial Bot Message -->
+            <div class="flex justify-start">
+                <div class="bot-message p-3 shadow-sm">
+                    Hello! I'm your AI Linguistics Tutor. How can I help you explore the world of language today?
+                </div>
+            </div>
+            <!-- Dynamic messages will be appended here -->
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 border-t border-gray-200">
+            <form id="chat-form" class="flex space-x-3">
+                <input type="text" id="message-input" placeholder="Type your linguistics question..." required 
+                       class="flex-grow p-3 border border-gray-300 rounded-xl focus:outline-none transition duration-200">
+                <button type="submit" id="send-button"
+                        class="bg-green-500 text-white p-3 rounded-xl hover:bg-green-600 transition duration-200 shadow-md flex items-center justify-center disabled:opacity-50">
+                    <svg id="send-icon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    <svg id="loading-spinner" class="animate-spin h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const apiKey = "AIzaSyAo-9yYJvJUo-eU-QlOfezgYwL4PGPrkU8"; 
+       
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${AIzaSyAo-9yYJvJUo-eU-QlOfezgYwL4PGPrkU8}`;
+
+        const chatWindow = document.getElementById('chat-window');
+        const chatForm = document.getElementById('chat-form');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const sendIcon = document.getElementById('send-icon');
+
+        // Use a simple array for conversation history
+        let chatHistory = [{ role: "model", parts: [{ text: "Hello! I'm your AI Linguistics Tutor. How can I help you explore the world of language today?" }] }];
+
+        // --- Helper Functions ---
+
+        function setChatLoading(isLoading) {
+            sendButton.disabled = isLoading;
+            if (isLoading) {
+                sendIcon.classList.add('hidden');
+                loadingSpinner.classList.remove('hidden');
+            } else {
+                sendIcon.classList.remove('hidden');
+                loadingSpinner.classList.add('hidden');
+            }
+        }
+        
+        function appendMessage(text, sender) {
+            const messageContainer = document.createElement('div');
+            messageContainer.className = `flex ${sender === 'user' ? 'justify-end' : 'justify-start'}`;
+            
+            const messageBubble = document.createElement('div');
+            messageBubble.className = `${sender}-message p-3 shadow-md`;
+            messageBubble.innerHTML = formatBotResponse(text);
+
+            messageContainer.appendChild(messageBubble);
+            chatWindow.appendChild(messageContainer);
+
+            // Scroll to the bottom
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        // Simple markdown to HTML conversion for bold/italics
+        function formatBotResponse(text) {
+            // Replace bold **text** with <strong>text</strong>
+            text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            // Replace italics *text* with <em>text</em>
+            text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            // Replace newlines with <br>
+            text = text.replace(/\n/g, '<br>');
+            return text;
+        }
+
+        // --- API Call and Core Logic ---
+
+        const maxRetries = 3;
+        
+        async function fetchAIResponse(userQuery, retryCount = 0) {
+            const currentHistory = [...chatHistory, { role: "user", parts: [{ text: userQuery }] }];
+
+            const payload = {
+                contents: currentHistory,
+                // Define the model's persona/expertise
+                systemInstruction: {
+                    parts: [{ text: "You are a world-class Linguistics AI Tutor. Your responses must be informative, precise, and use proper linguistic terminology, explaining concepts clearly and concisely." }]
+                },
+            };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    if (response.status === 429 && retryCount < maxRetries) {
+                        const delay = Math.pow(2, retryCount) * 1000;
+                        console.warn(`Rate limit hit. Retrying in ${delay / 1000}s...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return fetchAIResponse(userQuery, retryCount + 1);
+                    }
+                    throw new Error(`API call failed with status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't process that request.";
+                
+                // Update conversation history with both user and model parts
+                chatHistory.push(
+                    { role: "user", parts: [{ text: userQuery }] }, 
+                    { role: "model", parts: [{ text: text }] }
+                );
+                
+                return text;
+
+            } catch (error) {
+                console.error("Error communicating with AI:", error);
+                return "I'm sorry, I encountered an error while trying to generate a response. Please try again.";
+            }
+        }
+
+        // --- Event Listener ---
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const userQuery = messageInput.value.trim();
+            if (!userQuery) return;
+
+            // 1. Display user message
+            appendMessage(userQuery, 'user');
+            messageInput.value = ''; // Clear input
+
+            // 2. Set loading state and temporary bot message
+            setChatLoading(true);
+            const loadingMessage = document.createElement('div');
+            loadingMessage.className = 'flex justify-start';
+            loadingMessage.innerHTML = `<div id="temp-bot-message" class="bot-message p-3 shadow-sm">
+                <svg class="animate-pulse h-3 w-8 text-gray-500" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"></circle><circle cx="18" cy="12" r="2"></circle><circle cx="6" cy="12" r="2"></circle></svg>
+            </div>`;
+            chatWindow.appendChild(loadingMessage);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+
+            // 3. Get AI response
+            const aiResponse = await fetchAIResponse(userQuery);
+
+            // 4. Remove loading message and display final response
+            document.getElementById('temp-bot-message')?.parentElement.remove();
+            setChatLoading(false);
+            
+            appendMessage(aiResponse, 'bot');
+        });
+
+        // Initialize with system message (already in chat history)
+    </script>
+
+</body>
+</html>
